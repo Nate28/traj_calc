@@ -21,7 +21,8 @@ tc = reload(tc)
 R_e = ac.R_earth.value
 g_0 = ac.g0.value
 
-steps = 2000
+atm_steps = 2000
+integrator_steps = 1E5
 d = 4E-10
 
 ## Small sphere
@@ -79,17 +80,43 @@ V_init = 7.66E3
 h_init = 416E3
 h_end = 0
 
+def aero_dat(Re, Ma, Kn):
+	"""
+	This is a sample function for the spacecraft_var class.  It serves as an 
+	example of the use of an aerodynamic database for spacecraft whose 
+	aero coefficients are to be recalculated during a simulation.  
+	
+	Note that the variables available for correlations are currently Reynolds,
+	Mach, and Knudsen numbers.  These must always be passed to the aero_dat
+	function, even if they remain unused.  Also, the order in which arguments are
+	passed and variables returned must not be altered.
+	"""
+	#C_d = 2.0
+	C_l = 0.0
+	C_s = 0.0
+	
+	# Drag coefficient correlation for sphere
+	# http://www.chem.mtu.edu/~fmorriso/DataCorrelationForSphereDrag2013.pdf
+	C_d = (24 / Re) + \
+		((2.6 * Re / 5.0) / (1 + (Re / 5.0)**1.52)) + \
+		((0.411 * (Re / 263E3)**-7.94) / (1 + (Re / 263E3)**-8.0)) + \
+		(Re**0.8 / 461E3)
+		
+	return [C_d, C_l, C_s]
+
 atm_init = [1000E3, -1E3]
-h = np.linspace(atm_init[0], atm_init[1], steps)
-v = tc.spacecraft(C_d, m, A, R_n, L, Cl=C_l)
+h = np.linspace(atm_init[0], atm_init[1], atm_steps)
+
+#v = tc.spacecraft(C_d, m, A, R_n, L, Cl=C_l)
+v = tc.spacecraft_var(aero_dat, C_d, C_l, 0.0, m, A, R_n, L, integrator_steps)
 
 #atm = tc.atmosphere_us76(h)
 #t = tc.trajectory(v, atm, gamma_init, V_init, g_0, R_e)
 
 atm_2 = tc.atmosphere_nrl(h)
-
-steps = 1E5
-t = tc.trajectory_lifting(v, atm_2, gamma_init, V_init, g_0, R_e, h_init, h_end, steps)
+t = tc.trajectory_lifting(v, atm_2, gamma_init, V_init, g_0, R_e, h_init, 
+	h_end, integrator_steps)
+	
 t.initialise()
 t.simulate_dopri(dt=0.25)
 t.calculate_heating()
@@ -99,6 +126,29 @@ t.plot_triple()
 t.show_regimes()
 t.plot_trajectory()
 t.show_regimes()
+
+plt.figure()
+plt.xlabel(r'$\dot{Q} \; \left( \frac{kW}{m^2} \right)$', fontsize=17)
+plt.ylabel(r'$h \; \left( km \right)$', fontsize=17)
+plt.plot(t.qdot.conv.bj/1000, t.h/1000, label='Brandis-Johnston')
+plt.plot(t.qdot.conv.dh/1000, t.h/1000, label='Detra-Hidalgo')
+plt.plot(t.qdot.conv.s/1000, t.h/1000, label='Smith')
+plt.plot(t.qdot.conv.sg/1000, t.h/1000, label='Sutton-Graves')
+plt.grid(True)
+plt.tight_layout()
+plt.xscale('log')
+plt.legend(loc=0)
+
+plt.figure()
+plt.xlabel(r'$\dot{Q} \; \left( \frac{kW}{m^2} \right)$', fontsize=17)
+plt.ylabel(r'$h \; \left( km \right)$', fontsize=17)
+plt.plot(t.qdot.net.bj/1000, t.h/1000, label='Brandis-Johnston')
+plt.plot(t.qdot.net.s/1000, t.h/1000, label='Smith')
+#plt.plot(t.qdot.net.sg_ts/1000, t.h/1000, label='Sutton-Graves, Tauber-Sutton')
+plt.grid(True)
+plt.tight_layout()
+plt.xscale('log')
+plt.legend(loc=0)
 
 plt.show()
 

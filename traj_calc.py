@@ -16,16 +16,16 @@ try:
 	import j77sri as j77
 	import matplotlib.pyplot as plt
 	import scipy.interpolate as spint
-	import rotate
+	import rotate_lib
 except:
 	print 'ERROR: Dependencies are not satisfied'
 
-__author__ = 'Nathan Donaldson'
+__author__ 		= 'Nathan Donaldson'
 __contributor__ = 'Hilbert van Pelt'
-__email__ = 'nathan.donaldson@eng.ox.ac.uk'
-__status__ = 'Release'
-__version__ = '1.4'
-__license__ = 'MIT'
+__email__ 		= 'nathan.donaldson@eng.ox.ac.uk'
+__status__ 		= 'Development'
+__version__ 	= '0.5'
+__license__ 	= 'MIT'
 
 # Time derivatives for forward Euler solver and ODE solver initialisation
 # Velocity
@@ -53,6 +53,11 @@ def grav_sphere(g_0, R, h):
 	g = g_0 * ((R / (R + h))**2)
 	return g
 
+# Ballistic coefficient
+def ballistic_coeff(Cd, m, A):
+	beta = m / (Cd * A)
+	return beta
+	
 def traj_3DOF_dt(t, y, params):
 	# Function to be called by ODE solver when time integration of governing
 	# equations is required
@@ -127,6 +132,20 @@ def interpolate_event(t, i, l):
 			
 	return final_list
 
+def interpolate_atmosphere(t, h_interp):
+	rho_interp = spint.griddata(t.atmosphere.h, t.atmosphere.rho,
+			h_interp, method='linear')
+	a_interp = spint.griddata(t.atmosphere.h, t.atmosphere.a,
+			h_interp, method='linear')
+	p_interp = spint.griddata(t.atmosphere.h, t.atmosphere.p,
+			h_interp, method='linear')
+	T_interp = spint.griddata(t.atmosphere.h, t.atmosphere.T,
+			h_interp, method='linear')
+	mu_interp = spint.griddata(t.atmosphere.h, t.atmosphere.mu,
+			h_interp, method='linear')
+			
+	return [rho_interp, a_interp, p_interp, T_interp, mu_interp]
+	
 class placeholder:
 	def __init__(self):
 		pass
@@ -141,6 +160,61 @@ class spacecraft:
 		self.m = m
 		self.L = L
 		self.ballistic_coeff = (self.m) / (self.Cd * self.A)
+		
+		return None
+
+class spacecraft_var:
+	"""
+	Class for storage of spacecraft variables.  This class is designed for use
+	with simulations where the spacecraft aerodynamic coefficients are variable.
+	A function (aero_dat) must be supplied which returns drag, lift, and lateral
+	force coefficients as a function of Mach, Reynolds and Knudsen numbers.
+	
+	(Note that arguments and returns for aero_dat are given in the required 
+	order in the paragraph above.)
+	
+	This class must be initialised with the same number of integration steps as
+	the trajectory class with which it is to be used.
+	"""
+	def __init__(self, aero_dat, Cd_init, Cl_init, Cs_init, m, A, R_n, L, steps):
+		self.aero_coeffs_type = 'VARIABLE'
+		
+		# Store number of integration steps
+		# NB: This should be the same as the trajectory instance used to run
+		# calculations.
+		self.steps = steps		
+		
+		# Store uder-defined function for recalculating aero coefficients
+		self.aero_dat = aero_dat
+		#self.Cd, self.Cl, self.Cs = self.aero_dat(self.Re, self.Ma, self.Kn)
+
+		# Store spacecraft constants		
+		self.A = A
+		self.R_n = R_n
+		self.m = m
+		self.L = L
+
+		# Generate storage stuctures for aero coefficients
+		self.Cd = np.zeros(self.steps)
+		self.Cl = np.zeros(self.steps)
+		self.Cs = np.zeros(self.steps)
+		self.ballistic_coeff = np.zeros(self.steps)
+
+		# Assign initial values for aero coefficients
+		self.Cd_init = Cd_init
+		self.Cl_init = Cl_init
+		self.Cs_init = Cs_init
+		self.ballistic_coeff_init = ballistic_coeff(self.Cd_init, self.m, self.A)		
+		self.Cd[0] = Cd_init
+		self.Cl[0] = Cl_init
+		self.Cs[0] = Cs_init
+		self.ballistic_coeff[0] = self.ballistic_coeff_init	
+		
+		return None
+		
+	def update_aero(self, index, Re, Ma, Kn):
+		self.Cd[index], self.Cl[index], self.Cs[index] = self.aero_dat(Re, Ma, Kn)
+		self.ballistic_coeff[index] = ballistic_coeff(self.Cd[index], self.m, self.A)
 		
 		return None
 		
@@ -387,7 +461,7 @@ class trajectory_lifting:
 
 		self.solver_rho[0], self.solver_a[0], self.solver_p[0], \
 			self.solver_T[0], self.solver_mu[0] = \
-			self.interpolate_atmosphere(self.h_init)
+			interpolate_atmosphere(self, self.h_init)
 
 		self.p_dyn[0] = fcl.p_dyn(rho=self.solver_rho[0], V=self.V[0])
 		self.Ma[0] = self.V[0] / self.solver_a[0]
@@ -445,26 +519,8 @@ class trajectory_lifting:
 
 	def truncate(self):
 		# Truncate solution arrays to remove trailing zeros (from unused elements)
-		self.V 			= np.delete(self.V, np.arange(self.index+1, len(self.V)))
-		self.gamma 		= np.delete(self.gamma, np.arange(self.index+1, len(self.gamma)))
-		self.h 			= np.delete(self.h, np.arange(self.index+1, len(self.h)))
-		self.r 			= np.delete(self.r, np.arange(self.index+1, len(self.r)))
-		self.p_dyn 		= np.delete(self.p_dyn, np.arange(self.index+1, len(self.p_dyn)))
-		self.solver_time 	= np.delete(self.solver_time, np.arange(self.index+1, len(self.solver_time)))
-		self.solver_rho 		= np.delete(self.solver_rho, np.arange(self.index+1, len(self.solver_rho)))
-		self.solver_p 		= np.delete(self.solver_p, np.arange(self.index+1, len(self.solver_p)))
-		self.solver_T 		= np.delete(self.solver_T, np.arange(self.index+1, len(self.solver_T)))
-		self.solver_mu 		= np.delete(self.solver_mu, np.arange(self.index+1, len(self.solver_mu)))
-		self.solver_a 		= np.delete(self.solver_a, np.arange(self.index+1, len(self.solver_a)))
-		self.g 			= np.delete(self.g, np.arange(self.index+1, len(self.g)))
-		self.Ma 			= np.delete(self.Ma, np.arange(self.index+1, len(self.Ma)))
-		self.Kn 			= np.delete(self.Kn, np.arange(self.index+1, len(self.Kn)))
-		self.Re 			= np.delete(self.Re, np.arange(self.index+1, len(self.Re)))
-		self.mfp 			= np.delete(self.mfp, np.arange(self.index+1, len(self.mfp)))
-
-		sol_temp = self.sol
-		self.sol = np.zeros([self.index, 4])
-		self.sol = sol_temp[0:self.index, :]
+		truncate(self, self.index, self.l)
+		
 		return None
 
 	def final_step_event(self):
@@ -502,20 +558,6 @@ class trajectory_lifting:
 
 		return None
 
-	def interpolate_atmosphere(self, h_interp):
-		rho_interp = spint.griddata(self.atmosphere.h, self.atmosphere.rho,
-				h_interp, method='linear')
-		a_interp = spint.griddata(self.atmosphere.h, self.atmosphere.a,
-				h_interp, method='linear')
-		p_interp = spint.griddata(self.atmosphere.h, self.atmosphere.p,
-				h_interp, method='linear')
-		T_interp = spint.griddata(self.atmosphere.h, self.atmosphere.T,
-				h_interp, method='linear')
-		mu_interp = spint.griddata(self.atmosphere.h, self.atmosphere.mu,
-				h_interp, method='linear')
-
-		return [rho_interp, a_interp, p_interp, T_interp, mu_interp]
-
 	def simulate_dopri(self, dt=1E-2):
 		"""
 		Run trajectory calculations using explicit Runge-Kutta method of order
@@ -550,15 +592,26 @@ class trajectory_lifting:
 
 		# Solve ODE system using conditional statement based on altitude
 		while self.h[index-1] > 0:	
-			# Update parameters with atmospheric density at each altitude step
-			params = [self.R, self.g[index-1], self.spacecraft.ballistic_coeff,
-				self.solver_rho[index-1], self.spacecraft.Cl, self.spacecraft.Cd]
-			self.eq.set_f_params(params)
+
+			# Update ODE solver parameters from spacecraft object and 
+			# atmospheric model at each separate time step		
+			if self.spacecraft.aero_coeffs_type == 'CONSTANT':
+				params = [self.R, self.g[index-1], self.spacecraft.ballistic_coeff,
+					self.solver_rho[index-1], self.spacecraft.Cl, self.spacecraft.Cd]
+				self.eq.set_f_params(params)
+				
+			elif self.spacecraft.aero_coeffs_type == 'VARIABLE':
+				self.spacecraft.update_aero(self.index, self.Re[index-1], 
+					self.Ma[index-1], self.Kn[index-1])
+				params = [self.R, self.g[index-1], self.spacecraft.ballistic_coeff[index-1],
+					self.solver_rho[index-1], self.spacecraft.Cl[index-1], 
+					self.spacecraft.Cd[index-1]]
+				self.eq.set_f_params(params)
 
 			# Solve ODE system (sol[V, gamma, h, r])
 			self.sol[index, :] = self.eq.integrate(self.time_steps[index])
 
-			# Unpack ODE solver results into storage stuctures
+			# Unpack ODE solver results into storage structures
 			self.V[index] = self.sol[index, 0]
 			self.gamma[index] = self.sol[index, 1]
 			self.h[index] = self.sol[index, 2]
@@ -569,7 +622,7 @@ class trajectory_lifting:
 			# flexibility when coding as different models have different interfaces)
 			self.solver_rho[index], self.solver_a[index], \
 				self.solver_p[index], self.solver_T[index], \
-				self.solver_mu[index] = self.interpolate_atmosphere(self.h[index])
+				self.solver_mu[index] = interpolate_atmosphere(self, self.h[index])
 
 			# Calculate gravitational acceleration at current altitude
 			self.g[index] = grav_sphere(self.g_0, self.R, self.h[index])
@@ -577,7 +630,7 @@ class trajectory_lifting:
 			# Calculate dynamic pressure iteration results
 			self.p_dyn[index] = fcl.p_dyn(rho=params[3], V=self.sol[index, 0])
 
-			# Calculate Mach numbers
+			# Calculate Mach, Knudsen, and Reynolds numbers
 			self.Ma[index] = self.V[index] / self.solver_a[index]
 			self.mfp[index] = fcl.mean_free_path(self.solver_T[index], 
 				self.solver_p[index], self.atmosphere.d)
@@ -925,10 +978,6 @@ class trajectory_aerobraking:
 		self.solver_T 	= np.zeros(self.N)
 		self.solver_time 	= np.zeros(self.N)
 
-		self.solver_rho[0], self.solver_a[0], \
-			self.solver_p[0], self.solver_T[0], \
-			self.solver_mu[0] = self.interpolate_atmosphere(self.h[0])
-
 		# Altitude above surface of planet (assumed to be perfectly spherical)
 		self.h[0] = np.linalg.norm(self.pos_xyz[0, :]) - self.R
 
@@ -943,7 +992,7 @@ class trajectory_aerobraking:
 		# Interpolate atmospheric variables
 		self.solver_rho[0], self.solver_a[0], \
 			self.solver_p[0], self.solver_T[0], \
-			self.solver_mu[0] = self.interpolate_atmosphere(self.h[0])
+			self.solver_mu[0] = interpolate_atmosphere(self, self.h[0])
 
 		self.lift[0] = fcl.aero_force(self.solver_rho[0], self.V_mag[0],
 			self.spacecraft.Cl, self.spacecraft.A)
@@ -955,13 +1004,13 @@ class trajectory_aerobraking:
 			self.side_force[0]])
 
 		# Calculate Euler angles (pitch and yaw; roll is assumed to be zero)
-		self.alpha[0], self.theta[0] = rotate.vector_to_euler(self.pos_xyz[0, 0],
+		self.alpha[0], self.theta[0] = rotate_lib.vector_to_euler(self.pos_xyz[0, 0],
 			self.pos_xyz[0, 1], self.pos_xyz[0, 2])
 
 		# Transform aero forces from rotating to inertial frame
-		self.forces_inertial[0, :] = rotate.roty(self.forces_rotating[0, :],
+		self.forces_inertial[0, :] = rotate_lib.roty(self.forces_rotating[0, :],
 			self.alpha[0], mode='rad')
-		self.forces_inertial[0, :] = rotate.rotz(self.forces_rotating[0, :],
+		self.forces_inertial[0, :] = rotate_lib.rotz(self.forces_rotating[0, :],
 			self.theta[0], mode='rad')
 
 		# Split forces into components
@@ -986,20 +1035,6 @@ class trajectory_aerobraking:
 			print 'MODEL INITIALISED.  INITIAL STEP COUNT: %i' % self.N
 
 		return None
-
-	def interpolate_atmosphere(self, h_interp):
-		rho_interp = spint.griddata(self.atmosphere.h, self.atmosphere.rho,
-				h_interp, method='linear')
-		a_interp = spint.griddata(self.atmosphere.h, self.atmosphere.a,
-				h_interp, method='linear')
-		p_interp = spint.griddata(self.atmosphere.h, self.atmosphere.p,
-				h_interp, method='linear')
-		T_interp = spint.griddata(self.atmosphere.h, self.atmosphere.T,
-				h_interp, method='linear')
-		mu_interp = spint.griddata(self.atmosphere.h, self.atmosphere.mu,
-				h_interp, method='linear')
-
-		return [rho_interp, a_interp, p_interp, T_interp, mu_interp]
 
 	def simulate_dopri(self, rtol=1E-4, nsteps=1E8):
 		# Store ODE solver variables
@@ -1046,7 +1081,7 @@ class trajectory_aerobraking:
 			# Interpolate atmospheric variables
 			self.solver_rho[i], self.solver_a[i], \
 				self.solver_p[i], self.solver_T[i], \
-				self.solver_mu[i] = self.interpolate_atmosphere(self.h[i])
+				self.solver_mu[i] = interpolate_atmosphere(self, self.h[i])
 
 			# Axial aero forces
 			self.lift[i] = fcl.aero_force(self.solver_rho[i], self.V_mag[i],
@@ -1059,13 +1094,13 @@ class trajectory_aerobraking:
 				self.side_force[i]])
 
 			# Calculate Euler angles (pitch and yaw; roll is assumed to be zero)
-			self.alpha[i], self.theta[i] = rotate.vector_to_euler(self.sol[i, 3],
+			self.alpha[i], self.theta[i] = rotate_lib.vector_to_euler(self.sol[i, 3],
 				self.sol[i, 4], self.sol[i, 5])
 
 			# Transform aero forces from rotating to inertial frame
-			self.forces_inertial[i, :] = rotate.roty(self.forces_rotating[i, :],
+			self.forces_inertial[i, :] = rotate_lib.roty(self.forces_rotating[i, :],
 				self.alpha[i], mode='rad')
-			self.forces_inertial[i, :] = rotate.rotz(self.forces_rotating[i, :],
+			self.forces_inertial[i, :] = rotate_lib.rotz(self.forces_rotating[i, :],
 				self.theta[i], mode='rad')
 
 			# Split forces into components
@@ -1114,39 +1149,8 @@ class trajectory_aerobraking:
 		
 	def truncate(self):			
 		# Truncate solution arrays to remove trailing zeros (from unused elements)
-		self.V_xyz		= np.delete(self.V_xyz, np.arange(self.index+1, len(self.V_xyz)))
-		self.V_mag		= np.delete(self.V_mag, np.arange(self.index+1, len(self.V_mag)))
-		self.F_mag		= np.delete(self.F_mag, np.arange(self.index+1, len(self.F_mag)))
-		self.F_x			= np.delete(self.F_x, np.arange(self.index+1, len(self.F_x)))
-		self.F_y			= np.delete(self.F_y, np.arange(self.index+1, len(self.F_y)))
-		self.F_z			= np.delete(self.F_z, np.arange(self.index+1, len(self.F_z)))
-		self.alpha		= np.delete(self.alpha, np.arange(self.index+1, len(self.alpha)))
-		self.theta		= np.delete(self.theta, np.arange(self.index+1, len(self.theta)))
-		self.drag		= np.delete(self.drag, np.arange(self.index+1, len(self.drag)))
-		self.lift		= np.delete(self.lift, np.arange(self.index+1, len(self.lift)))
-		self.side_force	= np.delete(self.side_force, np.arange(self.index+1, len(self.side_force)))
-		self.pos_mag		= np.delete(self.pos_mag, np.arange(self.index+1, len(self.pos_mag)))
-		self.pos_xyz		= np.delete(self.pos_xyz, np.arange(self.index+1, len(self.pos_xyz)))
-		self.h 			= np.delete(self.h, np.arange(self.index+1, len(self.h)))
-		self.r 			= np.delete(self.r, np.arange(self.index+1, len(self.r)))
-		self.solver_time 	= np.delete(self.solver_time, np.arange(self.index+1, len(self.solver_time)))
-		self.solver_rho 	= np.delete(self.solver_rho, np.arange(self.index+1, len(self.solver_rho)))
-		self.solver_p 	= np.delete(self.solver_p, np.arange(self.index+1, len(self.solver_p)))
-		self.solver_T 	= np.delete(self.solver_T, np.arange(self.index+1, len(self.solver_T)))
-		self.solver_mu 	= np.delete(self.solver_mu, np.arange(self.index+1, len(self.solver_mu)))
-		self.solver_a 	= np.delete(self.solver_a, np.arange(self.index+1, len(self.solver_a)))
-		self.Ma 			= np.delete(self.Ma, np.arange(self.index+1, len(self.Ma)))
-		self.Kn 			= np.delete(self.Kn, np.arange(self.index+1, len(self.Kn)))
-		self.Re 			= np.delete(self.Re, np.arange(self.index+1, len(self.Re)))
-		self.mfp 		= np.delete(self.mfp, np.arange(self.index+1, len(self.mfp)))
-		self.force_inertial	= np.delete(self.force_inertial, 
-			np.arange(self.index+1, len(self.force_inertial)))
-		self.force_rotating	= np.delete(self.force_rotating, 
-			np.arange(self.index+1, len(self.force_rotating)))
-
-		sol_temp = self.sol
-		self.sol = np.zeros([self.index, 4])
-		self.sol = sol_temp[0:self.index, :]
+		truncate(self, self.index, self.l)
+		
 		return None
 		
 	def final_step_event(self):
