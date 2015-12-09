@@ -8,4 +8,5 @@ J77 Python model by Deep Horizons
 https://github.com/DeepHorizons/Python-Jacchia77
 
 Main author: Nathan Donaldson, Osney Thermofluids Laboratory, University of Oxford
+
 Contributions: Hilbert van Pelt, Australian Defence Force Academy
