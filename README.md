@@ -1,5 +1,6 @@
 # traj_calc
-Planetary entry and orbital propagation simulation using Python 
+Planetary entry and orbital propagation simulation using Python.
+
 Citation: [![DOI](https://zenodo.org/badge/21491/Nate28/traj_calc.svg)](https://zenodo.org/badge/latestdoi/21491/Nate28/traj_calc)
 
 Requires: NumPy, SciPy, Cantera, aerocalc, matplotlib
