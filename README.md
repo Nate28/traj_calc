@@ -1,5 +1,6 @@
 # traj_calc
 Planetary entry and orbital propagation simulation using Python 
+Citation: [![DOI](https://zenodo.org/badge/21491/Nate28/traj_calc.svg)](https://zenodo.org/badge/latestdoi/21491/Nate28/traj_calc)
 
 Requires: NumPy, SciPy, Cantera, aerocalc, matplotlib
 
@@ -34,5 +35,3 @@ https://github.com/DeepHorizons/Python-Jacchia77
 Main author: Nathan Donaldson, Osney Thermofluids Laboratory, University of Oxford
 
 Contributions: Hilbert van Pelt, Australian Defence Force Academy
-
-If you use traj_calc for any of your research, please cite the authors using the web address for this GitHub repository. 
