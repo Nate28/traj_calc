@@ -33,6 +33,6 @@ https://github.com/DeepHorizons/Python-NRLMSISE-00
 J77 Python model by Deep Horizons
 https://github.com/DeepHorizons/Python-Jacchia77
 
-Main author: Nathan Donaldson, Osney Thermofluids Laboratory, University of Oxford
+Main author: Nathan Donaldson, Department of Aeronautics and Astronautics, University of Southampton
 
 Contributions: Hilbert van Pelt, Australian Defence Force Academy
