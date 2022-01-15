@@ -3,9 +3,9 @@ Planetary entry and orbital propagation simulation using Python.
 
 Citation: [![DOI](https://zenodo.org/badge/21491/Nate28/traj_calc.svg)](https://zenodo.org/badge/latestdoi/21491/Nate28/traj_calc)
 
-Requires: NumPy, SciPy, Cantera, aerocalc, matplotlib
+Requires: NumPy, SciPy, Cantera, matplotlib, aerocalc (for US76 atmosphere model only)
 
-Trajectories are simulated using the Fortran ODE solvers packaged with Scipy, with array handling courtesy of NumPy.  Cantera is used to calculate gas properties, ~~and aerocalc is used for the US76 atmospheric model~~.  
+Trajectories are simulated using the Fortran ODE solvers packaged with Scipy, with array handling courtesy of NumPy.  Cantera is used to calculate gas properties, and aerocalc is used for the US76 atmospheric model.  
 
 Capabilities include:
 + 3DoF lifting trajectory model (rotating, non-inertial reference frame)
@@ -15,9 +15,7 @@ Capabilities include:
 	+ Lift/drag/lateral forces considered
 	+ Spherical, non-rotating planet assumption
 + Choice of atmospheric models 
-	+ ~~US76~~ 
-		+ Removed aerocalc as a dependency
-		+ May replace with pyatmos in the future
+	+ US76 
 	+ Jacchia77
 	+ NRLMSISE_00
 + Function to allow automatic recalculation of aerodynamic coefficients during simulation (aerodynamic database interface)
