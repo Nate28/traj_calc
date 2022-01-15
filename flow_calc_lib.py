@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from __future__ import print_function
+
 """
 === FLOW CALC LIB ===
 Common calculations for fluid mechanics.
@@ -13,6 +15,18 @@ __status__ = 'Development'
 __version__ = '0.7'
 __license__ = 'MIT'
 
+import numpy as np
+
+#try:
+#	from numba import autojit
+#except:
+#	def autojit(a):
+#		return a
+
+def autojit(a):
+	return a
+
+@autojit
 def aero_force(rho, V, C, A):
 	"""
 	Aerodynamic lift/drag equation
@@ -28,6 +42,94 @@ def aero_force(rho, V, C, A):
 
 	return F
 
+def slpm2gps(m):
+	# Convert standard litres per minute (SLPM) to grams per second (g/s, gps)
+	return m * 0.019745179510791383
+
+def gps2slpm(m):
+	# Convert grams per second (g/s, gps) to standard litres per minute (SLPM) 
+	return m / 0.019745179510791383
+
+def kgps2slpm(m):
+	return gps2slpm(m) * 1000
+
+def slpm2kgps(m):
+	return slpm2gps(m) / 1000
+
+#@autojit
+#def normal_shock_ratios(Ma_1, gamma_var):
+#	"""
+#	Returns normal shock ratios for static and stagnation pressure and
+#	temperature, and density.  Also returns the Mach number following the
+#	shock (http://www.grc.nasa.gov/WWW/k-12/airplane/normal.html).
+#
+#	Note that input variables are for flow UPSTREAM of shock, while returns
+#	are for the flow DOWNSTREAM of the shock.  Returned ratios are of the form:
+#	'Downstream condition' / 'Upstream condition' i.e.
+#	'Condition beyond shock' / ' Condition in front of shock'
+#
+#	Input variables:
+#		Ma_1		:	Mach number upstream of shock
+#		gamma_var	:	Ratio of specific heats
+#		
+#	Returns:
+#		[0] : Static pressure ratio
+#		[1] : Static temperature ratio
+#		[2] : Total pressure ration
+#		[3] : Total temperature ratio (always 1.0)
+#		[4] : Density ratio
+#		[5] : Post-shock Mach number
+#	"""
+#
+#	p_ratio = ((2 * gamma_var * (Ma_1**2)) - (gamma_var - 1)) / (gamma_var + 1)
+#
+#	T_ratio = (((2 * gamma_var * (Ma_1**2)) - (gamma_var - 1)) * \
+#		(((gamma_var - 1) * (Ma_1**2)) + 2)) / (((gamma_var + 1)**2) * (Ma_1**2))
+#
+#	rho_ratio = ((gamma_var + 1) * (Ma_1**2)) / (((gamma_var - 1) * \
+#		(Ma_1**2)) + 2)
+#
+#	p_0_ratio = ((((gamma_var + 1) * (Ma_1**2)) / (((gamma_var - 1) * \
+#		(Ma_1**2)) + 2))**(gamma_var / (gamma_var - 1))) * \
+#		(((gamma_var + 1) / ((2 * gamma_var * (Ma_1**2)) - \
+#		(gamma_var - 1)))**(1 / (gamma_var - 1)))
+#
+#	T_0_ratio = 1.0
+#
+#	Ma_2 = np.sqrt((((gamma_var - 1) * (Ma_1**2)) + 2) / ((2 * gamma_var * \
+#		(Ma_1**2)) - (gamma_var - 1)))
+#
+#	return [p_ratio, T_ratio, p_0_ratio, T_0_ratio, rho_ratio, Ma_2]
+
+def rayleigh_pitot(gamma_var, Ma_1):
+	T_ratio = 1 / (1 + (((gamma_var - 1) / 2) * (Ma_1**2)))
+	p1_p0_ratio = T_ratio ** (gamma_var / (gamma_var - 1))
+	p02_p1_ratio = ((((gamma_var + 1) * (Ma_1**2)) / 2)**(gamma_var / (gamma_var - 1))) / \
+		((((2 * gamma_var * (Ma_1**2)) / (gamma_var + 1)) - \
+		((gamma_var - 1) / (gamma_var + 1)))**(1 / (gamma_var - 1)))
+	
+	return p1_p0_ratio * p02_p1_ratio
+
+def rayleigh_pitot_Ma(gamma_var, ratio):
+	guess = 1.0
+	increment = 0.1
+	temp = rayleigh_pitot(gamma_var, guess) * \
+		isen_nozzle_ratios_Ma(gamma_var, 'p', ratio)
+	error = abs(ratio - temp)
+	while error > 1E-15:
+# 		print(guess)
+		temp = rayleigh_pitot(gamma_var, guess)
+		error = abs(ratio - temp)
+		if temp > ratio:
+			guess += increment
+		elif temp < ratio:
+			increment *= 0.9
+			guess -= increment
+	
+	Ma = guess
+	return Ma
+
+@autojit
 def normal_shock_ratios(Ma_1, gamma_var):
 	"""
 	Returns normal shock ratios for static and stagnation pressure and
@@ -42,9 +144,16 @@ def normal_shock_ratios(Ma_1, gamma_var):
 	Input variables:
 		Ma_1		:	Mach number upstream of shock
 		gamma_var	:	Ratio of specific heats
+		
+	Returns:
+		[0] : Static pressure ratio (p2/p1)
+		[1] : Static temperature ratio (T2/T1)
+		[2] : Total pressure ratio (p02/p01)
+		[3] : Total temperature ratio (always 1.0)
+		[4] : Density ratio (rho2/rho1)
+		[5] : Post-shock Mach number (Ma2)
+		[6] : Stagnation-static pressure ratio (p02 / p1)
 	"""
-
-	import numpy as np
 
 	p_ratio = ((2 * gamma_var * (Ma_1**2)) - (gamma_var - 1)) / (gamma_var + 1)
 
@@ -63,8 +172,113 @@ def normal_shock_ratios(Ma_1, gamma_var):
 
 	Ma_2 = np.sqrt((((gamma_var - 1) * (Ma_1**2)) + 2) / ((2 * gamma_var * \
 		(Ma_1**2)) - (gamma_var - 1)))
+	
+	p02_p1_ratio = ((((gamma_var + 1) * (Ma_1**2)) / 2)**(gamma_var / (gamma_var - 1))) / \
+		((((2 * gamma_var * (Ma_1**2)) / (gamma_var + 1)) - \
+		((gamma_var - 1) / (gamma_var + 1)))**(1 / (gamma_var - 1)))
 
-	return [p_ratio, T_ratio, p_0_ratio, T_0_ratio, rho_ratio, Ma_2]
+	return [p_ratio, T_ratio, p_0_ratio, T_0_ratio, rho_ratio, Ma_2, p02_p1_ratio]
+
+@autojit
+def normal_shock_ratios_Ma(gamma_var, mode, ratio):
+	"""
+	Solves for Mach number given a ratio between freestream conditions and
+	the local ratio of specific heats.
+
+	Input variables:
+		gamma_var 	: 	Ratio of specific heats
+		mode 		: 	Ratio being input 
+						(may be any one of: "p", "p0", "rho", "T", "p02p1", "pitot")
+		ratio 		: 	Variable ratio
+	"""
+
+	if mode == 'p':
+		Ma = np.sqrt(((ratio * (gamma_var + 1)) + (gamma_var - 1)) / \
+			(2 * gamma_var))
+
+	elif mode == 'p0':
+		guess = 1.0
+		increment = 0.1
+		temp = normal_shock_ratios(guess, gamma_var)[2]
+		error = abs(ratio - temp)
+		while error > 1E-10:
+			temp = normal_shock_ratios(guess, gamma_var)[2]
+			error = abs(ratio - temp)
+			if temp > ratio:
+				guess += increment
+			elif temp < ratio:
+				increment /= 2
+				guess -= increment
+		Ma = guess
+
+	elif mode == 'T':
+		guess = 1.0
+		increment = 1.0
+		temp = normal_shock_ratios(guess, gamma_var)[1]
+		error = abs(ratio - temp)
+		while error > 1E-10:
+			temp = normal_shock_ratios(guess, gamma_var)[1]
+			error = abs(ratio - temp)
+			if temp < ratio:
+				guess += increment
+			elif temp > ratio:
+				increment /= 2
+				guess -= increment
+		Ma = guess
+
+	elif mode == 'rho':
+		Ma = np.sqrt(-(-2 * ratio) / ((gamma_var + 1) - \
+			(ratio * (gamma_var - 1))))
+
+	elif (mode == 'p02p1') or (mode == 'pitot'):
+		guess = 1.0
+		increment = 0.1
+		temp = normal_shock_ratios(guess, gamma_var)[6]
+		error = abs(ratio - temp)
+		while error > 1E-10:
+#			print(guess)
+			temp = normal_shock_ratios(guess, gamma_var)[6]
+			error = abs(ratio - temp)
+			if temp < ratio:
+				guess += increment
+			elif temp > ratio:
+				increment /= 2
+				guess -= increment
+		
+		Ma = guess
+		
+	else:
+		print('ERROR: Mode string incorrect')
+
+	return Ma
+
+def viscositySutherland(T, gas):
+	# Sutherland constants for common gases (C1, S, mu_ref, T_ref)
+	gas_dict = {
+				'air'	:	[1.4580000000-6, 110.4, 1.716E-5, 273.15],
+				'N2'	:	[1.406732195E-6, 111, 17.81E-6, 300.55],
+				'O2'	:	[1.693411300E-6, 127, 20.18E-6, 292.25],
+				'CO2'	:	[1.572085931E-6, 240, 14.8E-6, 293.15],
+				'CO'	:	[1.428193225E-6, 118, 17.2E-6, 288.15],
+				'H2'	:	[0.636236562E-6, 72, 8.76E-6, 293.85],
+				'NH3'	:	[1.297443379E-6, 370, 9.82E-6, 293.15],
+				'SO2'	:	[1.768466086E-6, 416, 12.54E-6, 293.65],
+				'He'	:	[1.484381490E-6, 79.4, 19E-6, 273],
+				'CH4'	:	[1.252898823E-6, 197.8, 12.01E-6, 273.15]
+				}
+
+	if gas in gas_dict:
+		C1 = gas_dict[gas][0]
+		S = gas_dict[gas][1]
+		mu_ref = gas_dict[gas][2]
+		T_ref = gas_dict[gas][3]
+		mu = mu_ref * ((T / T_ref)**(1.5)) * ((T_ref + S) / (T + S))
+		#mu = C1 * ((T**(3.0/2.0)) / (T + S))
+	else:
+		print('ERROR: Species not recognised')
+		mu = np.nan
+	
+	return mu
 
 def viscosity(**kwargs):
 	"""
@@ -94,7 +308,7 @@ def viscosity(**kwargs):
 	"""
 
 	from scipy.constants import k
-	import numpy as np
+
 
 	if (kwargs['mode'] == 'S') or (kwargs['mode'] == 's') or \
 	(kwargs['mode'] == 'Sutherland') or (kwargs['mode'] == 'sutherland'):
@@ -122,10 +336,10 @@ def viscosity(**kwargs):
 		if ('mu_ref' in kwargs) and ('T_ref' in kwargs) and ('T' in kwargs) \
 			and ('S' in kwargs):
 			mu = kwargs['mu_ref'] * ((kwargs['T'] / \
-			kwargs['T_ref'])**(3.0/2.0)) * ((kwargs['T_ref'] + \
+			kwargs['T_ref'])**(1.5)) * ((kwargs['T_ref'] + \
 			kwargs['S']) / (kwargs['T'] + kwargs['S']))
 		elif ('T' in kwargs) and ('S' in kwargs) and ('C1' in kwargs):
-			mu = kwargs['C_1'] * ((kwargs['T']**(3.0/2.0)) / (kwargs['T'] + kwargs['S']))
+			mu = kwargs['C1'] * ((kwargs['T']**(1.5)) / (kwargs['T'] + kwargs['S']))
 		else:
 			raise KeyError('Incorrect variable assignment')
 
@@ -137,6 +351,7 @@ def viscosity(**kwargs):
 
 	return mu
 
+@autojit
 def mean_free_path(T, p, d=4E-10):
     """
     Calculates the molecular mean free path in a gaseous flow
@@ -147,13 +362,48 @@ def mean_free_path(T, p, d=4E-10):
         d   :   Molecular diameter (default is air)
     """
 
-    from scipy.constants import k
-    import numpy as np
+#    from scipy.constants import k
+    k = 1.3806488e-23
 
     mfp = (k * T) / (np.sqrt(2) * np.pi * (d**2) * p)
 
     return mfp
 
+@autojit
+def probable_velocity(T, M=5.6E-26):
+	"""
+	Calculates most probable velocity of particles in a fluid
+
+	Input variables:
+		T 	: 	Gas temperature
+		M 	: 	Mass of single particle of gas species (default is air)
+
+	Air molecule mass has been sourced from:
+	http://practicalphysics.org/avogadros-number-and-mass-air-molecule.html)
+	"""
+
+	from scipy.constants import k
+
+
+	V = np.sqrt((2 * k * T) / M)
+
+	return V
+
+@autojit
+def mean_free_time(mfp, V):
+	"""
+	Calculates most probable velocity of particles in a fluid
+
+	Input variables:
+		mfp 	: 	Gas mean free path
+		V	: 	Mean particle velocity
+	"""
+
+	mft = mfp / V
+
+	return mft
+
+@autojit
 def Knudsen(T, p, L, d=4E-10):
 	"""
 	Calculates the Knudsen number in a gaseous flow
@@ -162,13 +412,32 @@ def Knudsen(T, p, L, d=4E-10):
 		T   :   Gas temperature
 		p   :   Gas pressure
 		L   :   Characteristic length scale
-		d   :   Molecular diameter (default is air)
+		d   :   Molecular diameter (default is 4e-10 m for air)
 	"""
 
 	Kn = mean_free_path(T, p, d) / L
 
 	return Kn
 
+@autojit
+def KnudsenMu(T, p, mu, L, R=287.0):
+	"""
+	Calculates the Knudsen number of a gaseous flow using the fluid's 
+	viscosity, static pressure, and static temperature.
+	
+    Input variables:
+		T   :   Gas temperature
+		p   :   Gas pressure
+		mu  :   Gas viscosity
+		R   :   Perfect gas constant (default is 287 J/kgK for air)
+	"""
+
+	#mu1./p1./L.*sqrt(pi*R*T1./2);	
+	Kn = (mu / (p * L)) * np.sqrt(0.5 * np.pi * T * R)
+	
+	return Kn
+
+@autojit
 def Mach(a, V):
 	"""
 	Calculates flow Mach number
@@ -178,6 +447,7 @@ def Mach(a, V):
 
 	return Ma
 
+@autojit
 def Reynolds(rho, U, L, mu):
 	"""
 	Calculates flow Reynolds number
@@ -188,7 +458,7 @@ def Reynolds(rho, U, L, mu):
 	return Re
 
 def KnReMa(gamma_var, **kwargs):
-	import numpy as np
+
 
 	if ('Kn' in kwargs) and ('Ma' in kwargs):
 		# Calculate Re
@@ -202,6 +472,18 @@ def KnReMa(gamma_var, **kwargs):
 
 	return ans
 
+def Stanton_q(qDot, rho, U, Cp, deltaT):
+	"""
+	Calculates Stanton number based upon incident heat flux and freestream 
+	enthalpy.  The variable deltaT is the difference between the freestream
+	static temperature and the wall temperature.
+	"""
+	
+	St = qDot / (rho * U * Cp * deltaT)
+	
+	return St
+
+@autojit
 def isen_nozzle_ratios(M_E, gamma_var):
     """
     Calculates ratio between stagnation and exit pressure and temperature in
@@ -217,6 +499,28 @@ def isen_nozzle_ratios(M_E, gamma_var):
 
     return p_ratio, T_ratio
 
+@autojit
+def isen_nozzle_ratios_Ma(gamma_var, mode, ratio):
+	"""
+	Calculates Mach number based on ratios between total and static pressure in
+	between stagnation and exit pressure and temperature in an isentropic nozzle.
+	Ratios should be presented as static over stagnation.
+
+	Input variables:
+		gamma_var  : 	Ratio of specific heats
+		mode 	 	: 	Ratio being input (may be any one of: p, T)
+		ratio 	: 	Variable ratio
+	"""
+
+	if (mode == 'p') or (mode == 'P'):
+		a = (-gamma_var / (gamma_var - 1))
+		Ma = (((ratio**(1 / a)) - 1) / ((gamma_var - 1) / 2))**0.5
+	elif (mode == 'T'):
+		Ma = (((1 / ratio) - 1) / ((gamma_var - 1) / 2))**0.5
+
+	return Ma
+
+@autojit
 def isen_nozzle_A_ratio(M_E, gamma_var):
     """
     Calculates ratio between exit and throat areas in an isentropic nozzle.
@@ -226,12 +530,19 @@ def isen_nozzle_A_ratio(M_E, gamma_var):
         gamma_var   :   Ratio of specific heats
     """
 
-    A_ratio = (((gamma_var + 1) / 2)**-((gamma_var + 1) / \
-        (2 * (gamma_var - 1)))) * ((1 + (((gamma_var - 1) / 2) * \
-        (M_E**2)))**((gamma_var + 1) / (2 * (gamma_var - 1)))) * (1/M_E)
+#	ind = (gamma_var + 1) / (2 * (gamma_var - 1))
+#
+#    A_ratio = ((2 / (gamma_var + 1))**((gamma_var + 1) / \
+#        (2 * (gamma_var - 1)))) * ((1 + (((gamma_var - 1) / 2) * \
+#        (M_E**2)))**((gamma_var + 1) / (2 * (gamma_var - 1)))) * (1 / M_E)
+    ind = (gamma_var + 1) / (2 * (gamma_var - 1))
+
+    A_ratio = (1 / M_E) * (((2 + ((M_E**2) * (gamma_var - 1))) /
+        (gamma_var + 1))**ind)
 
     return A_ratio
 
+@autojit
 def isen_nozzle_Ma(A_ratio_sol, gamma_var, tol=1E-10, step_size=0.1):
     """
     Iteratively solves the isentropic expansion equation for converging-
@@ -242,6 +553,11 @@ def isen_nozzle_Ma(A_ratio_sol, gamma_var, tol=1E-10, step_size=0.1):
         A_ratio_sol :   Nozzle area ratio (exit/throat)
         gamma_var   :   ratio of specific heats
     """
+
+    # Validate area ratio
+    if A_ratio_sol < 1.0:
+        print('WARNING: Area ratio is < 1.0, calculation will be performed on 1/A_ratio_sol')
+        A_ratio_sol = 1.0 / A_ratio_sol
 
     # Initialise solution
     M_E = 1.0
@@ -263,45 +579,106 @@ def isen_nozzle_Ma(A_ratio_sol, gamma_var, tol=1E-10, step_size=0.1):
             M_E -= step_size
             A_ratio = isen_nozzle_A_ratio(M_E, gamma_var)
 
-    #print '\nSolution computed!\nA_E/A*:\t%f\nM_E:\t%f' % (A_ratio, M_E)
+    #print('\nSolution computed!\nA_E/A*:\t%f\nM_E:\t%f' % (A_ratio, M_E))
 
     return M_E
 
-def isen_nozzle_mass_flow(A_t, p_t, T_t, gamma_var, R, M):
+#def isen_nozzle_mass_flow(A_t, p_t, T_t, gamma_var, R, M):
+#	"""
+#	Calculates mass flow through a nozzle which is isentropically expanding
+#	a given flow
+#
+#	Input variables:
+#		A_t 		: 	nozzle throat area
+#		gamma_var 	: 	ratio of specific heats
+#		p_t 		: 	pressure at throat
+#		T_t 		: 	temperature at throat
+#		M 		: 	Mach number at throat
+#		R 		: 	Perfect gas constant
+#	"""
+#
+#	m_dot = (A_t * p_t * (T_t**0.5)) * ((gamma_var / R)**0.5) * \
+#		M * ((1 + (((gamma_var - 1) / 2) * \
+#		(M**2)))**(-((gamma_var + 1) / (2 * (gamma_var - 1)))))
+#
+#	return m_dot
+
+@autojit
+def isen_nozzle_mass_flow(A, p0, T0, gamma_var, R, Ma):
 	"""
-	Calculates mass flow through a nozzle which is isentropically expanding
-	a given flow
+	Calculates mass flow rate at a given point along the centreline of a
+	nozzle given the Mach number and nozzle cross-sectional area at the point
+	of interest, and the flow stagnation conditions.
 
 	Input variables:
-		A_t 		: 	nozzle throat area
+		A 		: 	nozzle cross-sectional area
 		gamma_var 	: 	ratio of specific heats
-		p_t 		: 	pressure at throat
-		T_t 		: 	temperature at throat
-		M 		: 	Mach number at throat
-		R 		: 	Perfect gas constant
+		p_0 		: 	stagnation pressure
+		T_0 		: 	stagnation temperature
+		mdot 	: 	mass flow rate through nozzle
 	"""
 
-	m_dot = (A_t * p_t * (T_t**0.5)) * ((gamma_var / R)**0.5) * \
-		M * ((1 + (((gamma_var - 1) / 2) * \
-		(M**2)))**(-((gamma_var + 1) / (2 * (gamma_var - 1)))))
+	mdot = p0 * Ma * A * ((gamma_var / (R * T0))**0.5) * \
+		((1 + ((Ma**2) * ((gamma_var - 1) / 2)))**((gamma_var + 1) / \
+		(-2 * (gamma_var - 1))))
 
-	return m_dot
+	return mdot
 
-def isen_nozzle_choked_mass_flow(A_t, p_0, h_0, gamma_var):
+@autojit
+def isen_nozzle_mass_flow_Ma(mdot_sol, A, p0, T0, gamma_var, R, \
+	tol=1E-10, step_size=0.1):
 	"""
-	Calculates mass flow through a nozzle which is isentropically expanding
-	a given flow and is choked (Mach number at throat is 1.0)
+	Calculates Mach number at a given point along the centreline of a
+	nozzle given a fixed mass flow rate and the flow stagnation conditions.
 
 	Input variables:
-		A_t 		: 	nozzle throat area
+		A 		: 	nozzle cross-sectional area
 		gamma_var 	: 	ratio of specific heats
-		p_t 		: 	stagnation chamber
-		T_t 		: 	stagnation temperature
+		p_0 		: 	stagnation pressure
+		T_0 		: 	stagnation temperature
+		mdot 	: 	mass flow rate through nozzle
 	"""
 
-	#m_dot = ((gamma_var * p0) * (()**())) * (()**())
+	# Initialise solution
+	Ma = 1.0
+	mdot = isen_nozzle_mass_flow(A, p0, T0, gamma_var, R, Ma)
 
-	return None
+	# Begin iteration loop
+	while (mdot <= (mdot_sol - tol)) or (mdot >= (mdot_sol + tol)):
+
+		# If current solution is smaller than (required value - tolerance), iterate
+		# to next value of mdot and repeat calculation
+		if mdot > (mdot_sol + tol):
+			Ma += step_size
+			mdot = isen_nozzle_mass_flow(A, p0, T0, gamma_var, R, Ma)
+
+		# If current solution is larger than (required value + tolerance), reverse
+		# direction of solver and half step size
+		elif mdot < (mdot_sol - tol):
+			step_size /= 2.0
+			Ma -= step_size
+			mdot = isen_nozzle_mass_flow(A, p0, T0, gamma_var, R, Ma)
+
+	return Ma
+
+#@autojit
+#def isen_nozzle_throat_mass_flow(A_t, p_0, T_0, gamma_var, R):
+#	"""
+#	Calculates mass flow through a nozzle which is isentropically expanding
+#	a given flow and is choked (Mach number at throat is 1.0)
+#
+#	Input variables:
+#		A_t 		: 	nozzle throat area
+#		gamma_var 	: 	ratio of specific heats
+#		p_0 		: 	stagnation pressure
+#		T_0 		: 	stagnation temperature
+#	"""
+#
+#	m_dot = (p_0 * gamma_var * A_t) * \
+#		((1 / (gamma_var * R * T_0)) * \
+#		((2 / (gamma_var + 1))**((gamma_var + 1) / (gamma_var - 1))))**0.5
+#
+#	return m_dot
 
 def T_static(**kwargs):
     """
@@ -331,7 +708,8 @@ def T_static(**kwargs):
 def T_stag(**kwargs):
     """
     Calculates stagnation temperature based upon either of two input
-    variable sets.
+    variable sets.  Optionally returns the ratio between stagnation
+	and freestream temperature if no static term is supplied.
 
     First method:
         T_stag(C_p = specific heat capacity,
@@ -342,6 +720,10 @@ def T_stag(**kwargs):
         T_stag(Ma = fluid Mach number,
             gamma_var = ratio of specific heats,
             T = static temperature)
+
+	Return ratio:
+		T_stag(Ma = fluid Mach number,
+			gamma_var = ratio of specific heats)
     """
 
     if ('C_p' in kwargs) and ('V' in kwargs) and ('T' in kwargs):
@@ -349,16 +731,22 @@ def T_stag(**kwargs):
     elif ('Ma' in kwargs) and ('gamma_var' in kwargs) and ('T' in kwargs):
         T_0 = kwargs['T'] * (1 + (((kwargs['gamma_var'] - 1) / 2) * \
         (kwargs['Ma']**2)))
+    elif ('gamma_var' in kwargs) and ('Ma' in kwargs):
+        T_0 = 1 + (((kwargs['gamma_var'] - 1) / 2) * (kwargs['Ma']**2))
     else:
         raise KeyError('Incorrect variable assignment')
 
     return T_0
 
+@autojit
+def p_stag_Ma(Ma, gamma_var):
+	return (1 + (((gamma_var - 1) / 2) * (Ma**2)))**(gamma_var / (gamma_var - 1))
+
 def p_stag(**kwargs):
 	"""
 	Calculates stagnation pressure based upon either of three input
 	variable sets.  Optionally returns the ratio between stagnation
-	and freestream pressure if no pressure term is supplied.
+	and freestream pressure if no static term is supplied.
 
 	First method:
 		p_stag(rho = fluid density,
@@ -387,6 +775,35 @@ def p_stag(**kwargs):
 		raise KeyError('Incorrect variable assignment')
 
 	return p_0
+
+@autojit
+def Ma_from_p_stag(ratio, gamma_var):
+	"""
+	Solves for Mach number given a ratio between stagnation and static
+	pressure and the ratio of specific heats.
+
+	Input variables:
+		gamma_var 	: 	Ratio of specific heats
+		ratio 	 	: 	Stagnation pressure / static pressure
+	"""
+
+	guess = 1.0
+	increment = 0.1
+	temp = p_stag(Ma=guess, gamma_var=gamma_var)
+	error = abs(ratio - temp)
+
+	while error > 1E-10:
+		temp = p_stag(Ma=guess, gamma_var=gamma_var)
+		error = abs(ratio - temp)
+		if temp < ratio:
+			guess += increment
+		elif temp > ratio:
+			increment /= 2
+			guess -= increment
+
+	Ma = guess
+
+	return Ma
 
 def p_static(**kwargs):
 	"""
@@ -422,25 +839,30 @@ def p_static(**kwargs):
 
 	return p
 
+#@autojit
+#def p_dyn_V(rho, V):
+#	return 0.5 * rho * (V**2)
+
 def p_dyn(**kwargs):
 	"""
 	Calculates dynamic pressure based upon either of two input
 	variable sets.
 
-	First method:
+	First method (incompressible flow only):
 		p_dyn(rho = fluid density,
 			V = fluid velocity)
 
-	Second method:
+	Second method (compressible flow only):
 		p_dyn(Ma = fluid Mach number,
 			gamma_var = ratio of specific heats,
 			p = static pressure)
 	"""
 
-	if ('rho') and ('V') in kwargs:
+	if ('rho' in kwargs) and ('V' in kwargs):
 		q = 0.5 * kwargs['rho'] * (kwargs['V']**2)
-	elif ('Ma' in kwargs) and ('p' in kwargs) and ('gamma_var' in kwargs):
-		q = 0.5 * kwargs['gamma'] * kwargs['p'] * (kwargs['Ma']**2)
+	elif ('Ma' in kwargs) and ('p' in kwargs) and \
+		(('gamma_var' in kwargs) or ('gamma' in kwargs)):
+			q = 0.5 * kwargs['gamma'] * kwargs['p'] * (kwargs['Ma']**2)
 
 	return q
 
@@ -450,9 +872,7 @@ def p_e(**kwargs):
 	subsonic or supersonic flow for thermodynamic equilibrium and either
 	a calorically perfect or imperfect gas.
 	"""
-
-	import numpy as np
-
+	
 	Ma_inf = kwargs['Ma_inf']
 	gamma_var = kwargs['gamma_var']
 	p_inf = kwargs['p_inf']
@@ -569,13 +989,13 @@ def Prandtl(**kwargs):
     """
 
     if ('C_p' in kwargs) and ('k' in kwargs) and ('mu' in kwargs):
-        prandtl_number = (kwargs['C_p'] * kwargs['mu']) / kwargs['k']
+        Pr = (kwargs['C_p'] * kwargs['mu']) / kwargs['k']
     elif ('nu' in kwargs) and ('alpha' in kwargs):
-        prandtl_number = kwargs['nu'] / kwargs['alpha']
+        Pr = kwargs['nu'] / kwargs['alpha']
     else:
         raise KeyError('Incorrect variable assignment')
 
-    return prandtl_number
+    return Pr
 
 def Schmidt(**kwargs):
     """
@@ -592,13 +1012,13 @@ def Schmidt(**kwargs):
     """
 
     if ('mu' in kwargs) and ('D' in kwargs) and ('rho' in kwargs):
-        schmidt_number = kwargs['mu'] / (kwargs['rho'] * kwargs['D'])
+        Sc = kwargs['mu'] / (kwargs['rho'] * kwargs['D'])
     elif ('nu' in kwargs) and ('D' in kwargs):
-        schmidt_number = kwargs['nu'] / kwargs['D']
+        Sc = kwargs['nu'] / kwargs['D']
     else:
         raise KeyError('Incorrect variable assignment')
 
-    return schmidt_number
+    return Sc
 
 def Lewis(**kwargs):
     """
@@ -611,17 +1031,28 @@ def Lewis(**kwargs):
     Second method:
         Le(D = mass diffusivity,
            alpha = thermal diffusivity)
+    
+    Third method:
+        Le(k = thermal conductivity,
+        	   rho = density,
+        	   D_im = mixture averaged diffusion coefficient,
+           Cp = specific heat capacity at constant pressure)
     """
 
     if ('Sc' in kwargs) and ('Pr' in kwargs):
-        lewis_number = kwargs['Sc'] / kwargs['Pr']
+        Le = kwargs['Sc'] / kwargs['Pr']
     elif ('alpha' in kwargs) and ('D' in kwargs):
-        lewis_number = kwargs['alpha'] / kwargs['D']
+        Le = kwargs['alpha'] / kwargs['D']
+    elif ('k' in kwargs) and ('rho' in kwargs) and ('D_im' in kwargs) \
+        and ('Cp' in kwargs):
+        Le = kwargs['k'] / (kwargs['rho'] * kwargs['D_im'] * kwargs['Cp'])
     else:
         raise KeyError('Incorrect variable assignment')
 
-    return lewis_number
 
+    return Le
+
+@autojit
 def thermal_diffusivity(k, rho, C_p):
     """
     Calculates thermal diffusion coefficient of a fluid.
@@ -636,6 +1067,7 @@ def thermal_diffusivity(k, rho, C_p):
 
     return alpha
 
+@autojit
 def kinematic_viscosity(mu, rho):
     """
     Calculates kinematic viscosity of a fluid.
@@ -685,6 +1117,7 @@ def vel_gradient(**kwargs):
 
     return vel_gradient
 
+@autojit
 def shock_standoff(R_n, rho_inf, rho_s):
 	"""
 	Approximates supersonic shock stand-off distance for the stagnation
@@ -700,6 +1133,7 @@ def shock_standoff(R_n, rho_inf, rho_s):
 
 	return delta
 
+@autojit
 def enthalpy_wall_del(T_0, T_w, C_p):
     """
     Calculates specific enthalpy difference between total conditions and
@@ -731,7 +1165,7 @@ def C_p_calc(**kwargs):
 			T = gas temperature)
 	"""
 
-	import numpy as np
+
 
 	if ('gamma_var' in kwargs) and ('R' in kwargs):
 		C_p = (kwargs['gamma_var'] * kwargs['R']) / (kwargs['gamma_var'] - 1)
@@ -776,7 +1210,7 @@ def enthalpy(**kwargs):
 			Vol = gas volume)
 	"""
 
-	import numpy as np
+
 
 	# Find C_p for a calorically perfect gas from gamma and R if not already supplied
 	if (('gamma_var' in kwargs) and ('R' in kwargs) and ('C_p' not in kwargs)
@@ -810,6 +1244,7 @@ def enthalpy(**kwargs):
 
 	return h
 
+@autojit
 def h_to_T(h, gamma_var, R, theta_v):
 	"""
 	Extracts total temperature given enthalpy using Newton-Raphson iteration.
@@ -832,10 +1267,11 @@ def h_to_T(h, gamma_var, R, theta_v):
 			break
 
 	if (n == 100) and (abs(delta) > 1E-6):
-		print 'ERROR: Newton-Raphson method failed to converge in 100 iterations'
+		print('ERROR: Newton-Raphson method failed to converge in 100 iterations')
 
 	return T
 
+@autojit
 def self_diffusion(n, T, d=4E-10, m=28.97E-3):
     """
     Calculates self diffusion coefficient of a molecule in single species
@@ -855,10 +1291,11 @@ def self_diffusion(n, T, d=4E-10, m=28.97E-3):
 
     return D_11
 
+@autojit
 def fay_riddell(solid, bound, rho_e, mu_e, rho_w, mu_w, Pr, Le, \
     vel_grad, h_0, h_D, enthalpy_wall_del):
 
-	import numpy as np
+
 
 	# Empirical coefficient selected based on shape of geometry (sphere
 	# or cylinder)
@@ -885,6 +1322,7 @@ def fay_riddell(solid, bound, rho_e, mu_e, rho_w, mu_w, Pr, Le, \
 	q_dot = A * (Pr**-0.6) * ((rho_e * mu_e)**0.4) * ((rho_w * mu_w)**0.1) * \
             np.sqrt(vel_grad) * enthalpy_wall_del * B
 
+@autojit
 def Mach_vector(M_inf, alpha, theta, mode='deg'):
 	"""
 	Returns vector of components of Mach number based upon pitch and yaw
@@ -899,7 +1337,7 @@ def Mach_vector(M_inf, alpha, theta, mode='deg'):
 					('deg' is the default, and need not be specified)
 	"""
 
-	import numpy as np
+
 
 	if mode == 'rad':
 		pass
@@ -907,7 +1345,7 @@ def Mach_vector(M_inf, alpha, theta, mode='deg'):
 		alpha = np.deg2rad(alpha)
 		theta = np.deg2rad(theta)
 	else:
-		print 'ERROR: incorrect angular input specified; assuming radians'
+		print('ERROR: incorrect angular input specified; assuming radians')
 
 	y = np.sin(alpha)
 	z = np.sin(theta) * np.cos(alpha)
@@ -917,6 +1355,7 @@ def Mach_vector(M_inf, alpha, theta, mode='deg'):
 
 	return M
 
+@autojit
 def pres_coeff_mod_newton(N, M_vector, Cp_max=2):
 	"""
 	Calculates pressure coefficient along a surface in supersonic/hypersonic flow
@@ -929,7 +1368,7 @@ def pres_coeff_mod_newton(N, M_vector, Cp_max=2):
 					point behind a normal shock wave (scalar, float)
 	"""
 
-	import numpy as np
+
 
 	# Initalise variables
 	len_N = len(N)
@@ -953,6 +1392,7 @@ def pres_coeff_mod_newton(N, M_vector, Cp_max=2):
 
 	return Cp, delta
 
+@autojit
 def pres_coeff_max(M, gamma_var):
 	"""
 	Calculates the maximum pressure coefficient on a surface following a normal
@@ -971,6 +1411,7 @@ def pres_coeff_max(M, gamma_var):
 
 	return Cp_max
 
+@autojit
 def pres_from_Cp(Cp, p_inf, rho_inf, V_inf):
 	"""
 	Calculates pressure from freestream conditions based upon local pressure
@@ -987,11 +1428,12 @@ def pres_from_Cp(Cp, p_inf, rho_inf, V_inf):
 
 	return p
 
+@autojit
 def surface_force(p, N, A):
 	"""
-	Calculates the XYZ components of the force acting upon a three dimensional
-	surface element given the local pressure, element area, and element normal
-	vector.
+	Calculates the XYZ components of the force acting normal to a three
+	dimensional surface element given the local pressure, element area, and
+	element normal vector.
 
 	Input variables:
 		p	:	Pressure acting upon surface
@@ -999,7 +1441,7 @@ def surface_force(p, N, A):
 		A	:	Surface area
 	"""
 
-	import numpy as np
+
 
 	F_mag = p * A
 	F_x = -F_mag * N[:, 0]
@@ -1009,6 +1451,29 @@ def surface_force(p, N, A):
 
 	return F
 
+@autojit
+def surface_shear(t, S, A):
+	"""
+	Calculates the XYZ components of the force acting tangential to a three
+	dimensional surface element given the shear force, element area, and
+	local shear vector.
+
+	Input variables:
+		t	:	Force acting tangential to surface
+		S	:	Surface shear vector
+		A	:	Surface area
+	"""
+
+
+
+	T_x = -t * S[:, 0]
+	T_y = -t * S[:, 1]
+	T_z = -t * S[:, 2]
+	T = np.array([T_x, T_y, T_z]).T
+
+	return T
+
+@autojit
 def surface_moment(F, C, CG):
 	"""
 	Calculates moment(s) exerted about the centre of gravity of a structure by
@@ -1022,7 +1487,7 @@ def surface_moment(F, C, CG):
 		CG	:	Coordinates of centre of gravity (array or list, 3 floats)
 	"""
 
-	import numpy as np
+
 
 	# Calculate moment arms (XYZ vector components)
 	L = C - CG
@@ -1047,6 +1512,7 @@ def surface_moment(F, C, CG):
 
 	return [M, L]
 
+@autojit
 def speed_of_sound(gamma_var, R, T):
 	"""
 	Calculates local speed of sound.
@@ -1057,11 +1523,12 @@ def speed_of_sound(gamma_var, R, T):
 		T			:	Gas temperature
 	"""
 
-	import numpy as np
+
 	a = np.sqrt(gamma_var * R * T)
 
 	return a
 
+@autojit
 def aero_coeff(F, M, A_ref, L_ref, rho_inf, V_inf, alpha, beta):
 	"""
 	Calculates aerodynamic coefficients from the sum of forces and moments
@@ -1078,26 +1545,37 @@ def aero_coeff(F, M, A_ref, L_ref, rho_inf, V_inf, alpha, beta):
 	Returns (as a list):
 		C_L		:	Lift coefficient (vertical force)
 		C_D		:	Drag coefficient (longitudinal force)
+		C_S		:	Side force coefficient (lateral force)
 		C_N		:	Normal coefficient (yawing moment)
 		C_A		:	Axial coefficient (rolling moment)
 		C_M		:	Moment coefficient (pitching moment)
 	"""
 
-	import numpy as np
+
 
 	# Dynamic pressure
 	q = p_dyn(rho=rho_inf, V=V_inf)
 
 	# Sum of forces
-	F_x = np.sum(F[:, 0])
-	F_y = np.sum(F[:, 1])
-	F_z = np.sum(F[:, 2])
+	if np.shape(F) == (3,):
+		F_x = F[0]
+		F_y = F[1]
+		F_z = F[2]
+	else:
+		F_x = np.sum(F[:, 0])
+		F_y = np.sum(F[:, 1])
+		F_z = np.sum(F[:, 2])
 
 	# Sum of moments (in a given direction, NOT about an axis)
 	# NB/ Moment components in [x, y, z] direction act about the [z&y, x&z, x&y] axes.
-	M_x = np.sum(M[:, 0])
-	M_y = np.sum(M[:, 1])
-	M_z = np.sum(M[:, 2])
+	if np.shape(M) == (3,):
+		M_x = M[0]
+		M_y = M[1]
+		M_z = M[2]
+	else:
+		M_x = np.sum(M[:, 0])
+		M_y = np.sum(M[:, 1])
+		M_z = np.sum(M[:, 2])
 
 	M_pitch = M_y
 	M_roll = M_x
@@ -1125,3 +1603,68 @@ def aero_coeff(F, M, A_ref, L_ref, rho_inf, V_inf, alpha, beta):
 #		(C_y * np.sin(beta))
 
 	return [C_L, C_D, C_S, C_N, C_A, C_M]
+
+@autojit
+def del_aero_coeff(Cp, Cf, N, S, A, S_ref):
+
+	del_C_A = ((Cp * N[:, 0]) + (Cf * S[:, 0])) * (A / S_ref)
+	del_C_Y = ((Cp * N[:, 1]) + (Cf * S[:, 1])) * (A / S_ref)
+	del_C_N = ((Cp * N[:, 2]) + (Cf * S[:, 2])) * (A / S_ref)
+	del_C_l = (del_C_Y * (z / b)) + (del_C_N * (y / b))
+	del_C_m = (del_C_N * (x / c)) + (del_C_A * (z / c))
+	del_C_n = (del_C_Y * (x / b)) + (del_C_A * (y / b))
+
+	C_A = np.sum(del_C_A)
+	C_Y = np.sum(del_C_Y)
+	C_N = np.sum(del_C_N)
+	C_l = np.sum(del_C_l)
+	C_m = np.sum(del_C_m)
+	C_n = np.sum(del_C_n)
+
+	return [del_C_A, del_C_Y, del_C_N, del_C_l, del_C_m, del_C_n, C_A, C_Y, \
+		C_N, C_l, C_m, C_n]
+
+def number_density(**kwargs):
+	"""
+	Calculates the number density of a gas
+
+	First method:
+		number_density(rho = fluid density [kg/m**3],
+			M = gas molar mass [kg/mol])
+
+	Second method:
+		number_density(p = fluid pressure [Pa],
+			T = fluid temperature [K],
+			R = fluid gas constant [J/kg.K],
+			M = gas molar mass [kg/mol])
+
+	Third method:
+		number_density(p = fluid pressure [Pa],
+			T = fluid temperature [K])
+	"""
+
+	from scipy.constants import N_A, R
+
+	if ('rho' in kwargs) and ('M' in kwargs):
+		n_v = (N_A * kwargs['rho']) / kwargs['M']
+	elif ('p' in kwargs) and ('R' in kwargs) and ('T' in kwargs) and ('M' in kwargs):
+		n_v = (N_A * kwargs['p']) / (kwargs['T'] * kwargs['R'] * kwargs['M'])
+	elif ('p' in kwargs) and ('T' in kwargs):
+		n_v = (N_A * kwargs['p']) / (kwargs['T'] * R)
+	else:
+		raise KeyError('Incorrect variable assignment')
+
+	return n_v
+
+def nusseltChurchillBernstein(Re, Pr):	
+	Nu = 0.3 + ( \
+		((0.62 * (Re**(1.0/2.0)) * (Pr**(1.0/3.0))) / \
+		((1 + ((0.4 / Pr)**(2.0/3.0)))**(1.0/4.0))) * \
+		((1.0 + ((Re / 282000)**(5.0/8.0)))**(4.0/5.0)) \
+		)
+		
+	if (Pr * Re) <= 0.2:
+		print('WARNING: (Pr * Re <= 0.2); Churchill-Bernstein equation is' \
+			'not valid for this condition')
+			
+	return Nu
