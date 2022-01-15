@@ -11,9 +11,9 @@ from __future__ import print_function
 import numpy as np
 
 __author__ = 'Nathan Donaldson'
-__email__ = 'nathan.donaldson@eng.ox.ac.uk'
+__email__ = 'nathandonaldson@outlook.com'
 __status__ = 'Development'
-__version__ = '0.3'
+__version__ = '0.4'
 __license__ = 'MIT'
 
 def detra_hidalgo(U, rho, R_n):

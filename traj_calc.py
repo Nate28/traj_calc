@@ -22,9 +22,9 @@ import rotate_lib
 
 __author__ 		= 'Nathan Donaldson'
 __contributor__ 		= 'Hilbert van Pelt'
-__email__ 			= 'nathan.donaldson@eng.ox.ac.uk'
+__email__ 			= 'nathandonaldson@outlook.com'
 __status__ 		= 'Development'
-__version__ 		= '0.51'
+__version__ 		= '0.60'
 __license__ 		= 'MIT'
 
 # Altitude derivatives for forward Euler solver and ODE solver initialisation

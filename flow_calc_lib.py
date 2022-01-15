@@ -10,7 +10,7 @@ Created on Sat Jul  5 15:28:47 2014
 """
 
 __author__ = 'Nathan Donaldson'
-__email__ = 'nathan.donaldson@eng.ox.ac.uk'
+__email__ = 'nathandonaldson@outlook.com'
 __status__ = 'Development'
 __version__ = '0.7'
 __license__ = 'MIT'
