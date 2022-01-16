@@ -7,7 +7,7 @@ Requires: NumPy, SciPy, Cantera, matplotlib, aerocalc (for US76 atmosphere model
 
 Trajectories are simulated using the Fortran ODE solvers packaged with Scipy, with array handling courtesy of NumPy.  Cantera is used to calculate gas properties, and aerocalc is used for the US76 atmospheric model.  
 
-Capabilities include:
+## Capabilities include
 + 3DoF lifting trajectory model (rotating, non-inertial reference frame)
 	+ Lift/drag forces considered (set lift coefficient to 0 for ballistic simulation)
 	+ Spherical, non-rotating planet assumption
@@ -20,13 +20,24 @@ Capabilities include:
 	+ NRLMSISE_00
 + Function to allow automatic recalculation of aerodynamic coefficients during simulation (aerodynamic database interface)
 + Stagnation heat flux correlation library (still experimental, with known errors)
-	
-Future additions planned:
+
+## Plots
+![](https://github.com/Nate28/traj_calc/blob/master/images/traj_calc_3plot.png) 
+
+_Figure 1 - Range, velocity, and Mach number against altitude during 3DOF simulation of atmospheric entry_
+
+
+![](https://github.com/Nate28/traj_calc/blob/master/images/traj_calc_qDot.png) 
+
+_Figure 2 - Stagnation heat flux as predicted by various correlations_
+
+## Future additions planned
 + 6 DoF dynamics model
 + Spherical harmonics for gravity modelling
 + Ablation model for heat shields
 + Aerodynamic coefficient calculator and database generator
 
+## Acknowledgements
 NRLMSISE_00 Python model by Deep Horizons
 https://github.com/DeepHorizons/Python-NRLMSISE-00
 
